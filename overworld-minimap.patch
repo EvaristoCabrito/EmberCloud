@@ -1,0 +1,103 @@
+diff --git a/apps/sandbox/OverworldStage.h b/apps/sandbox/OverworldStage.h
+index d07aa0c..303e5a6 100644
+--- a/apps/sandbox/OverworldStage.h
++++ b/apps/sandbox/OverworldStage.h
+@@ -1,4 +1,5 @@
+ #pragma once
++#include "OverworldMinimap.h"
+ #include "TempoPanel.h"
+ #include "world/TempoConsumers.h"
+ #include "world/Atmos2Service.h"
+@@ -791,6 +792,16 @@ class OverworldStage : public Stage {
+     // Som (the user, 2026-10-16: sound and options in the corner, as in Ember's other screens)
+     place(h);
+     soundButton("##sound", {h, h}, 16);
++    place(h);
++    if (emberPlate("##minimap", {h, h}, [&](ImDrawList* d, ImVec2 a, ImVec2 b, ImU32 ink) {
++          const ImVec2 iconMin{a.x + 9.0f, a.y + 11.0f}, iconMax{b.x - 9.0f, b.y - 11.0f};
++          d->AddRect(iconMin, iconMax, minimapVisible_ ? kAccent : ink, 2.0f);
++          d->AddCircleFilled({iconMin.x + 6.0f, iconMax.y - 5.0f}, 2.0f, ink);
++        }))
++      minimapVisible_ = !minimapVisible_;
++    if (ImGui::IsItemHovered())
++      ImGui::SetTooltip("%s", (minimapVisible_ ? tr("Ocultar minimapa", "Hide minimap")
++                                             : tr("Mostrar minimapa", "Show minimap")).c_str());
+     // Feitiços de campo (Ember: the field-spells icon beside Opções)
+     {
+       place(h);
+@@ -1097,6 +1108,9 @@ class OverworldStage : public Stage {
+     const float imgW = vw * zoomPercent / 100.0f;
+     const float imgH = map ? imgW * static_cast<float>(map->height) / static_cast<float>(map->width) : vh * 0.7f;
+     const float contentW = imgW + 16.0f, contentH = imgH + 16.0f;
++    std::optional<overworld_minimap::Area> minimap;
++    if (minimapVisible_ && map && imgW > 0 && imgH > 0 && vw >= 120.0f && vh >= 80.0f)
++      minimap = overworld_minimap::place(a, b, imgW / imgH);
+     ember::ensureTempoSave(save_);
+     worldTempoConfig_=testSave_?ember::tempoFromSave(save_):ember::tempoForCampaign(save_);
+     worldTempoTimeline_.configure(worldTempoConfig_,ember::campaignMilliseconds(save_),true);
+@@ -1122,9 +1136,13 @@ class OverworldStage : public Stage {
+     ImGui::SetCursorScreenPos(a);
+     ImGui::SetNextItemAllowOverlap();  // the zoom plates drawn after the viewport take their own clicks
+     ImGui::InvisibleButton("##viewport", {vw, vh}, ImGuiButtonFlags_MouseButtonLeft);
+-    const bool overViewport = ImGui::IsItemHovered() && !worldMapZoomBoxHovered(b);
+     const ImGuiIO& io = ImGui::GetIO();
+-    if (ImGui::IsItemActivated()) drag_ = {io.MousePos.x, io.MousePos.y, scrollX_, scrollY_}, dragMoved_ = false;
++    const bool overMinimap = minimap && minimap->contains(io.MousePos);
++    const bool overViewport = ImGui::IsItemHovered() && !worldMapZoomBoxHovered(b) && !overMinimap;
++    if (ImGui::IsItemActivated()) {
++      dragMoved_ = overMinimap;  // suppress click-through if the press starts on the minimap
++      if (!overMinimap) drag_ = {io.MousePos.x, io.MousePos.y, scrollX_, scrollY_};
++    }
+     if (ImGui::IsItemActive() && drag_) {
+       requestGrabCursor();  // Ember world-map-pan-grab: the gauntlet from the press on
+       const float dx = io.MousePos.x - drag_->x, dy = io.MousePos.y - drag_->y;
+@@ -1156,10 +1174,23 @@ class OverworldStage : public Stage {
+     // guerra viva, a névoa baixa / de caverna e o acabamento de cor; com o arquivo em "enabled": false, o desenho de antes.
+     const int fxWorld = underworld_ ? 1 : 0;
+     const bool fxOn = fx_ && fxConfig_[fxWorld].enabled && fxMap_[fxWorld] != WorldMapFx::kNoTexture;
++    const auto drawMinimap = [&] {
++      if (!minimap || partyX_ < 0) return;
++      const auto uv = [&](ImVec2 p) {
++        return ImVec2{std::clamp((p.x - o.x) / imgW, 0.0f, 1.0f),
++                      std::clamp((p.y - o.y) / imgH, 0.0f, 1.0f)};
++      };
++      overworld_minimap::draw(dl, *minimap, map->texture, uv(a), uv(b),
++                             {partyX_ / 100.0f, partyY_ / 100.0f},
++                             [&](ImDrawList* list, ImVec2 origin, float width, float height) {
++                               if (!underworld_) drawFog<24>(list, origin, width, height);
++                             });
++    };
+     if (fxOn) drawLitMap(dl, o, imgW, imgH, a, b);
+     else if (map) dl->AddImageRounded(map->texture, o, {o.x + imgW, o.y + imgH}, {0, 0}, {1, 1}, IM_COL32_WHITE, 8.0f);
+     if (underworld_) {  // the Atlas: no fog of war, no sky (it is underground); its board, Temple Descend and the leader
+       drawUnderworld(dl, o, imgW, imgH, overViewport, clicked);
++      drawMinimap();
+       dl->PopClipRect();
+       return;
+     }
+@@ -1277,6 +1308,7 @@ class OverworldStage : public Stage {
+       }
+       if (overViewport && box.contains(mouse) && clicked) clickedLeader = true;
+     }
++    drawMinimap();
+     dl->PopClipRect();
+ 
+     // Clicks: a step hex wins over the leader's button (the leader's own hex is never a step hex, so nothing is lost; a leader
+@@ -1545,8 +1577,8 @@ class OverworldStage : public Stage {
+   // The fog: dark (rgba 6,6,6,.78) except what every hex the party has stood on clears (revealSpot / revealAlpha), drawn as
+   // a grid of shaded cells (Ember's SVG mask, circles compositing over each other).
+   // Kept for "enabled": false in content/worldmap/overworld-light-fog.json (and the measurement's baseline).
++  template <int N = 96>
+   void drawFog(ImDrawList* dl, ImVec2 o, float w, float h) {
+-    constexpr int N = 96;
+     std::vector<RevealSpot> spots;
+     for (const ember::Json& k : save_.value("exploredHexes", ember::Json::array())) {
+       if (!k.is_string()) continue;
+@@ -2970,6 +3002,7 @@ class OverworldStage : public Stage {
+   std::string flashId_;
+   float flashAt_ = -10;
+   int zoom_ = 0;
++  bool minimapVisible_ = false;
+   int underworldZoom_ = 0;  // the Overworld's first stop, as zoom_
+   float scrollX_ = 0, scrollY_ = 0, centreX_ = 0.5f, centreY_ = 0.5f;
+   bool centred_ = false, recentre_ = false;
