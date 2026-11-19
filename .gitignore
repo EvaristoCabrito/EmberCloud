@@ -1,0 +1,6 @@
+# the joined files (the parts are what git keeps)
+/build/sprites/battle.pak
+/build/ground/ground-v81-torre-madeira-v01.pak
+/build/meshes/props-v51.pak
+/build/meshes/material-overhaul-v03.pak
+/*.tmp
