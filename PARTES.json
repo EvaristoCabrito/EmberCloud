@@ -3,5 +3,15 @@
   "size": 9248444944,
   "sha256": "93411be2e5d4aac8062bec4a8eabfca80ff6a4a13b2bc49487dac877bd5ceb35",
   "parts": 99
+ },
+ "build/ground/ground-v81-torre-madeira-v01.pak": {
+  "size": 1260875434,
+  "sha256": "d9b503018295466e969558df82c051b5768bfedbd74a548109b6fcc0f0469051",
+  "parts": 14
+ },
+ "build/meshes/props-v51.pak": {
+  "size": 1980798046,
+  "sha256": "196063cd962264ea302c42606a8a162ae8ff352c7759255c0bbb08e61b548ab5",
+  "parts": 21
  }
 }
